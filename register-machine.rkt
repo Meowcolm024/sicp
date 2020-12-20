@@ -18,7 +18,7 @@
                 (list (list 'pc pc) (list 'flag flag))))
         (define (allocate-register name)
             (if (assoc name register-table)
-                (error "Multiple")
+                (error "Multiple def")
                 (set! register-table 
                     (cons (list name (make-register name)) register-table)))
             'register-allocated)
@@ -110,7 +110,7 @@
 (define (make-assign inst machine labels operations pc)
     (let ((target
             (get-register machine (assign-reg-name inst)))
-          (value-exp (assign-val-exp inst)))
+          (value-exp (assign-value-exp inst)))
          (let ((value-proc
                 (if (operation-exp? value-exp)
                     (make-operation-exp
@@ -122,7 +122,7 @@
                 (advance-pc pc)))))
 
 (define assign-reg-name cadr)
-(define assign-val-exp caddr)
+(define assign-value-exp caddr)
 (define (advance-pc pc) (set-contents! pc (cdr (get-contents pc))))
 
 (define (make-test inst machine labels operations flag pc)
@@ -288,9 +288,6 @@
 
 (define (pop stack) (stack 'pop))
 (define (push stack value) ((stack 'push) value))
-
-;;; (get-register-contents!)
-;;; (start)
 
 (define gcd-machine
     (make-machine
