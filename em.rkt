@@ -1,5 +1,7 @@
 #lang sicp
 
+;; copied directlt from SICP
+
 (define (tagged-list? exp tag)
   (if (pair? exp)
       (eq? (car exp) tag)
@@ -356,3 +358,16 @@
        (goto (label test-b))
      gcd-done)))
 
+;; test
+(define (main)
+    (begin
+        (display (set-register-contents! gcd-machine 'a 206))
+        (newline)
+        (display (set-register-contents! gcd-machine 'b 40))
+        (newline)
+        (display (start gcd-machine))
+        (newline)
+        (display (get-register-contents gcd-machine 'a))
+        (newline)))
+
+(main)
