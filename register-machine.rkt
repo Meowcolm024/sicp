@@ -1,5 +1,12 @@
 #lang sicp
 
+;; helper
+
+(define (tagged-list? exp tag)
+  (if (pair? exp)
+      (eq? (car exp) tag)
+      false))
+
 (define (make-new-machine)
     (let ((pc (make-register 'pc))
           (flag (make-register 'flag))
@@ -29,7 +36,7 @@
                         (execute)))))
         (define (dispatch message)
             (cond ((eq? message 'start)
-                    (set-contenes! pc the-instrcution-sequence)
+                    (set-contents! pc the-instrcution-sequence)
                     (execute))
                   ((eq? message 'install-instruction-sequence)
                     (lambda (seq)
@@ -41,7 +48,7 @@
                   ((eq? message 'install-operations)
                     (lambda (ops) (set! the-ops (append the-ops ops))))
                   ((eq? message 'stack) stack)
-                  ((eq? message 'operayions) the-ops)
+                  ((eq? message 'operations) the-ops)
                   (else (error "Unknown"))))
         dispatch)))
 
@@ -49,7 +56,7 @@
 (define (get-register-contents machine register-name)
     (get-contents (get-register machine register-name)))
 (define (set-register-contents! machine register-name value)
-    (set-contenes! (get-register machine register-name) value) 'done)
+    (set-contents! (get-register machine register-name) value) 'done)
 (define (get-register machine reg-name)
     ((machine 'get-register) reg-name))
 
@@ -100,6 +107,126 @@
             (cdr val)
             (error "Undefined"))))
 
+(define (make-assign inst machine labels operations pc)
+    (let ((target
+            (get-register machine (assign-reg-name inst)))
+          (value-exp (assign-val-exp inst)))
+         (let ((value-proc
+                (if (operation-exp? value-exp)
+                    (make-operation-exp
+                        value-exp machine labels operations)
+                    (make-primitive-exp
+                        (car value-exp) machine labels))))
+              (lambda ()
+                (set-contents! target (value-proc))
+                (advance-pc pc)))))
+
+(define assign-reg-name cadr)
+(define assign-val-exp caddr)
+(define (advance-pc pc) (set-contents! pc (cdr (get-contents pc))))
+
+(define (make-test inst machine labels operations flag pc)
+    (let ((condition (test-condition inst)))
+        (if (operation-exp? condition)
+            (let ((condition-proc 
+                  (make-operation-exp condition machine labels operations)))
+            (lambda ()
+                (set-contents! flag (condition-proc))
+                (advance-pc)))
+            (error "Bad inst"))))
+
+(define test-condition cdr)
+
+(define (make-branch inst machine labels flag pc)
+    (let ((dest (branch-dest inst)))
+        (if (label-exp? dest)
+            (let ((insts
+                    (lookup-label labels (label-exp-label dest))))
+                (lambda ()
+                    (if (get-contents flag)
+                        (set-contents! pc insts)
+                        (advance-pc pc))))
+            (error "Bad inst"))))
+
+(define branch-dest cadr)
+
+(define (make-goto inst machine labels pc)
+    (let ((dest (goto-dest inst)))
+        (cond ((label-exp? dest)
+               (let ((insts (lookup-label labels (label-exp-label dest))))
+                    (lambda () (set-contents! pc insts))))
+              ((register-exp? dest)
+               (let ((reg (get-register machine (register-exp-reg dest))))
+                    (lambda () (set-contents! pc (get-contents reg)))))
+              (else (error "Bad goto")))))
+
+(define goto-dest cadr)
+
+(define (make-save inst machine stack pc)
+    (let ((reg (get-register machine (stack-inst-reg-name inst))))
+        (lambda ()
+            (push stack (get-contents reg))
+            (advance-pc pc))))
+
+(define (make-restore inst machine stack pc)
+    (let ((reg (get-register machine (stack-inst-reg-name inst))))
+        (lambda ()
+            (set-contents! reg (pop stack))
+            (advance-pc pc))))
+
+(define stack-inst-reg-name cadr)
+
+(define (make-perform inst machine labels operations pc)
+    (let ((action (perform-action inst)))
+        (if (operation-exp? action)
+            (let ((action-proc
+                    (make-operation-exp action machine labels operations)))
+                (lambda () (action-proc) (advance-pc pc)))
+            (error "Bad perform"))))
+
+(define perform-action cdr)
+
+(define (make-primitive-exp exp machine labels)
+    (cond ((constant-exp? exp)
+           (let ((c (constant-exp-value exp))) (lambda () c)))
+          ((label-exp? exp)
+           (let ((insts (lookup-label labels (label-exp-label exp))))
+            (lambda () insts)))
+          ((register-exp? exp)
+           (let ((r (get-register machine (register-exp-reg exp))))
+            (lambda () (get-contents r))))
+          (else (error "Unknown"))))
+
+(define (register-exp? exp) (tagged-list? exp 'reg))
+(define register-exp-reg cadr)
+(define (constant-exp? exp) (tagged-list? exp 'const))
+(define constant-exp-value cadr)
+(define (label-exp? exp) (tagged-list? exp 'label))
+(define label-exp-label cadr)
+
+(define (make-operation-exp exp machine labels operations)
+    (let ((op (lookup-prim (operation-exp-op exp) operations))
+          (aprocs
+            (map (lambda (e)
+                (make-primitive-exp e machine labels))
+                (operation-exp-operands exp))))
+         (lambda ()
+            (apply op (map (lambda (p) (p)) aprocs)))))
+
+(define (operation-exp? exp)
+    (and (pair? exp) (tagged-list? (car exp) 'op)))
+
+(define (operation-exp-op operation-exp)
+    (cadr (car operation-exp)))
+
+(define operation-exp-operands cdr)
+
+(define (lookup-prim symbol operations)
+    (let ((val (assoc symbol operations)))
+        (if val
+            (cadr val)
+            (error "Unknown"))))
+
 (define (make-execution-procedure inst labels machine pc flag stack ops)
     (cond ((eq? (car inst) 'assign) 
             (make-assign inst machine labels ops pc))
@@ -138,7 +265,7 @@
     dispatch))
 
 (define (get-contents register) (register 'get))
-(define (set-contenes! register value) ((register 'set) value))
+(define (set-contents! register value) ((register 'set) value))
 
 (define (make-stack)
     (let ((s '()))
@@ -176,3 +303,5 @@
                  (assign b (reg t))
                  (goto (label test-b))
                  gcd-done)))
+
+(gcd-machine)
